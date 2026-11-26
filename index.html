@@ -935,7 +935,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       <div class="mini-tbl" id="tblCap"></div>
     </div>
     <div class="card">
-      <div class="top"><div><h3>Tipo de investidor</h3><div class="hint">Top categorias · avançou = Engaged ou além, ativo · on hold = stand by, mailing ou reconectar · pass inclui "Pass, Updates / Mailing" · % = parcela que avançou</div></div><button class="tbl-toggle" data-tbl="tblCat">dados</button></div>
+      <div class="top"><div><h3>Tipo de investidor</h3><div class="hint">Top categorias · avançou = ativos em Engaged ou além · reunião = reunião realizada ou além · on hold = stand by, mailing ou reconectar</div></div><button class="tbl-toggle" data-tbl="tblCat">dados</button></div>
       <div class="chart-wrap" style="height:250px"><canvas id="chCat"></canvas></div>
       <div class="mini-tbl" id="tblCat"></div>
     </div>
@@ -1108,11 +1108,25 @@ const endLabels = {
       chart.getDatasetMeta(last).data.forEach((bar,i)=>{
         let tot = chart.data.datasets.reduce((a,d)=>a+(d.data[i]||0),0);
         let adv = chart.data.datasets[0].data[i]||0;
+        const meetV = opts.meet ? adv : null; if(opts.meet) adv += chart.data.datasets[1].data[i]||0;
         if(opts.totals){ adv = adv*opts.totals[i]/100; tot = opts.totals[i]; }
         ctx.textAlign='left'; ctx.textBaseline='middle';
         ctx.fillStyle = INK2; ctx.font = '600 11px Inter, system-ui';
         const t1 = fmt(tot); ctx.fillText(t1, bar.x+6, bar.y);
         const w = ctx.measureText(t1).width;
+        if(opts.meet){
+          const W = chart.width, cA = W-92, cB = W-36, ph = 9;
+          const pill = (cx, txt, bg, fg)=>{ ctx.font = '700 10.5px Inter, system-ui'; const tw = ctx.measureText(txt).width, pw = Math.max(tw+14, 40);
+            ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(cx-pw/2, bar.y-ph, pw, ph*2, ph); ctx.fill();
+            ctx.fillStyle = fg; ctx.textAlign='center'; ctx.fillText(txt, cx, bar.y+0.5); };
+          pill(cA, (tot?Math.round(100*adv/tot):0)+'%', 'rgba(176,137,79,.14)', col('--bronze-2'));
+          pill(cB, (tot?Math.round(100*meetV/tot):0)+'%', 'rgba(20,33,61,.09)', NAVY);
+          if(i===0){ ctx.font = '700 9px Inter, system-ui'; ctx.textAlign='center'; ctx.fillStyle = INK3;
+            const hy = bar.y - Math.max(18, (bar.height||16)/2+12);
+            ctx.fillText('AVANÇOU', cA, hy); ctx.fillText('REUNIÃO', cB, hy);
+            ctx.strokeStyle = 'rgba(0,0,0,.07)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cA-36, chart.chartArea.top-4); ctx.lineTo(cA-36, chart.chartArea.bottom); ctx.stroke(); }
+          ctx.textAlign='left'; return;
+        }
         ctx.fillStyle = col('--bronze-2'); ctx.font = '600 10.5px Inter, system-ui';
         ctx.fillText(' · '+(tot?Math.round(100*adv/tot):0)+'%', bar.x+6+w, bar.y);
       });
@@ -1720,25 +1734,27 @@ function renderAll(){
   const ADV_SET = ['Engaged','Meeting Norder - Done','1st Meeting Rise - Done','Deep Dive','Due Diligence','Soft Commitment'];
   const catSplit = {};
   const HOLD_CTA = ['Stand By / On Hold','Updates / Mailing','Reconectar'];
-  rows.forEach(r=>{ if(!r.cat) return; const o = catSplit[r.cat] = catSplit[r.cat]||{adv:0,out:0,hold:0,pass:0};
+  const MEET_SET = ['Meeting Norder - Done','1st Meeting Rise - Done','Deep Dive','Due Diligence','Soft Commitment'];
+  rows.forEach(r=>{ if(!r.cat) return; const o = catSplit[r.cat] = catSplit[r.cat]||{adv:0,meet:0,eng:0,out:0,hold:0,pass:0};
     if(r.st==='Pass' || DECL_NAMES.has(r.n) || /pass/i.test(r.cta||'') || /inactive|closed/i.test(r.cta||'')) o.pass++;
     else if(HOLD_CTA.includes(r.cta) || ['Mailing','Reconnect'].includes(r.st)) o.hold++;
-    else if(ADV_SET.includes(r.st)) o.adv++; else o.out++; });
+    else if(ADV_SET.includes(r.st)){ o.adv++; MEET_SET.includes(r.st) ? o.meet++ : o.eng++; } else o.out++; });
   const cs = k => catO.map(x=>catSplit[x[0]][k]);
   mkChart('chCat',{type:'bar',
     data:{labels:catO.map(x=>x[0]), datasets:[
-      {label:'Avançou', data:cs('adv'), backgroundColor:NAVY, borderSkipped:false, borderRadius:0, barThickness:16, stack:'s'},
+      {label:'Reunião realizada ou além', data:cs('meet'), backgroundColor:NAVY, borderSkipped:false, borderRadius:0, barThickness:16, stack:'s'},
+      {label:'Engaged', data:cs('eng'), backgroundColor:S1, borderSkipped:false, borderRadius:0, barThickness:16, stack:'s'},
       {label:'Outreach ou antes', data:cs('out'), backgroundColor:SLATE, borderSkipped:false, borderRadius:0, barThickness:16, stack:'s'},
       {label:'On hold / mailing', data:cs('hold'), backgroundColor:'#e3cfa3', borderSkipped:false, borderRadius:0, barThickness:16, stack:'s'},
       {label:'Pass / declinou', data:cs('pass'), backgroundColor:'#bdb7ab', borderSkipped:false, borderRadius:0, barThickness:16, stack:'s'}
     ]},
-    options:{indexAxis:'y', maintainAspectRatio:false, layout:{padding:{right:62}},
+    options:{indexAxis:'y', maintainAspectRatio:false, layout:{padding:{right:140, top:6}},
       interaction:{mode:'index', intersect:false},
-      plugins:{legend:{position:'top', align:'start', labels:{padding:10, font:{size:10.5}}}, endLabels:{on:true, stack:true},
-        tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)+' LPs', footer:it=>{const i=it[0].dataIndex; const t=catO[i][1]; return '% que avançou: '+Math.round(100*catSplit[catO[i][0]].adv/t)+'%';}}}},
+      plugins:{legend:{position:'top', align:'start', labels:{padding:10, font:{size:10.5}}}, endLabels:{on:true, stack:true, meet:true},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmt(c.raw)+' LPs', footer:it=>{const i=it[0].dataIndex; const t=catO[i][1], o=catSplit[catO[i][0]]; return ['Avançou (Engaged ou além): '+Math.round(100*o.adv/t)+'%','Chegou a reunião: '+Math.round(100*o.meet/t)+'%'];}}}},
       scales:{x:{stacked:true, grid:{color:GRID}, border:{display:false}}, y:{stacked:true, grid:{display:false}, border:{display:false}, ticks:{color:INK2}}}}
   });
-  miniTable('tblCat',['Categoria','LPs','Avançou','Outreach','On hold','Pass','% avançou'],Object.entries(catC).sort((a,b)=>b[1]-a[1]).map(x=>{const c=catSplit[x[0]]; return [x[0],fmt(x[1]),fmt(c.adv),fmt(c.out),fmt(c.hold),fmt(c.pass),Math.round(100*c.adv/x[1])+'%'];}));
+  miniTable('tblCat',['Categoria','LPs','Reunião+','Engaged','Outreach','On hold','Pass','% avançou','% reunião'],Object.entries(catC).sort((a,b)=>b[1]-a[1]).map(x=>{const c=catSplit[x[0]]; return [x[0],fmt(x[1]),fmt(c.meet),fmt(c.eng),fmt(c.out),fmt(c.hold),fmt(c.pass),Math.round(100*c.adv/x[1])+'%',Math.round(100*c.meet/x[1])+'%'];}));
 
   /* avanço por geografia */
   function splitBy(keyFn){
